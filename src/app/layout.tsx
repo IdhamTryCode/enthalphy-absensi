@@ -11,7 +11,6 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Absensi Enthalphy",
   description: "Sistem absensi karyawan PT Enthalphy Environergy Consulting",
-  icons: { icon: "/logo.png" },
 };
 
 export const viewport: Viewport = {

@@ -23,6 +23,7 @@ const schema = z.object({
     .string()
     .regex(/^\d{2}:\d{2}$/)
     .default("17:00"),
+  VERCEL_OIDC_TOKEN: optionalStr,
 });
 
 export const env = schema.parse(process.env);

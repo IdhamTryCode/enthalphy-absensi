@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "verify:google": "tsx --env-file=.env.local scripts/verify-google.ts"
+    "verify:google": "tsx --env-file=.env.local scripts/verify-google.ts",
+    "verify:blob": "tsx --env-file=.env.local scripts/verify-blob.ts",
+    "reset:today": "tsx --env-file=.env.local scripts/reset-today.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
