@@ -2,34 +2,29 @@ import "server-only";
 import { db, schema } from "@/db";
 import { and, eq, gte, lte, desc, asc, sql } from "drizzle-orm";
 import { todayWIB, formatTime, computeFlag } from "./time";
+import type {
+  AttendanceFlag,
+  AttendanceRow,
+  AttendanceStatus,
+  NextAction,
+  TodayState,
+} from "./attendance-types";
 
-export type AttendanceStatus = "Masuk" | "Pulang";
-export type AttendanceFlag = "Telat" | "Pulang Cepat" | null;
-export type NextAction = AttendanceStatus | "Selesai";
-
-export type AttendanceRow = {
-  id: string;
-  userId: string;
-  nama: string;
-  email: string;
-  divisionName: string | null;
-  tanggal: string; // YYYY-MM-DD (WIB)
-  jam: string; // HH:mm:ss
-  status: AttendanceStatus;
-  latitude: number;
-  longitude: number;
-  alamat: string;
-  linkFoto: string;
-  flag: AttendanceFlag;
-  note: string | null;
-  timestampAt: Date;
-};
-
-export type TodayState = {
-  checkIn: AttendanceRow | null;
-  checkOut: AttendanceRow | null;
-  nextAction: NextAction;
-};
+// Re-export types & client-safe helpers — `import { ... } from "@/lib/attendance"`
+// tetap bekerja sama persis seperti sebelumnya.
+export type {
+  AttendanceFlag,
+  AttendanceRow,
+  AttendanceStatus,
+  NextAction,
+  TodayState,
+} from "./attendance-types";
+export {
+  summarizeByUserAndDate,
+  summarizeByDate,
+  type DailySummary,
+  type DaySummary,
+} from "./attendance-helpers";
 
 const baseSelect = {
   id: schema.attendance.id,
@@ -49,35 +44,20 @@ const baseSelect = {
   timestampAt: schema.attendance.timestampAt,
 };
 
-type RawRow = {
-  id: string;
-  userId: string;
-  nama: string;
-  email: string;
-  divisionName: string | null;
-  tanggal: string;
-  jam: string;
-  status: AttendanceStatus;
-  latitude: number;
-  longitude: number;
-  alamat: string;
-  linkFoto: string;
-  flag: AttendanceFlag;
-  note: string | null;
-  timestampAt: Date;
-};
-
-function buildRow(row: RawRow): AttendanceRow {
-  return row;
-}
-
-export async function getTodayStateByUserId(userId: string): Promise<TodayState> {
-  const today = todayWIB();
-  const rows = await db
+// Query helper — semua read query attendance pakai shape AttendanceRow lewat join.
+// Drizzle infer type dari baseSelect, jadi tidak butuh manual RawRow.
+function selectAttendanceRows() {
+  return db
     .select(baseSelect)
     .from(schema.attendance)
     .innerJoin(schema.profiles, eq(schema.attendance.userId, schema.profiles.id))
     .leftJoin(schema.divisions, eq(schema.profiles.divisionId, schema.divisions.id))
+    .$dynamic();
+}
+
+export async function getTodayStateByUserId(userId: string): Promise<TodayState> {
+  const today = todayWIB();
+  const rows = await selectAttendanceRows()
     .where(
       and(
         eq(schema.attendance.userId, userId),
@@ -89,14 +69,14 @@ export async function getTodayStateByUserId(userId: string): Promise<TodayState>
   let checkIn: AttendanceRow | null = null;
   let checkOut: AttendanceRow | null = null;
   for (const r of rows) {
-    const a = buildRow(r);
-    if (a.status === "Masuk" && !checkIn) checkIn = a;
-    else if (a.status === "Pulang" && !checkOut) checkOut = a;
+    if (r.status === "Masuk" && !checkIn) checkIn = r;
+    else if (r.status === "Pulang" && !checkOut) checkOut = r;
   }
-  let nextAction: NextAction;
-  if (!checkIn) nextAction = "Masuk";
-  else if (!checkOut) nextAction = "Pulang";
-  else nextAction = "Selesai";
+  const nextAction: NextAction = !checkIn
+    ? "Masuk"
+    : !checkOut
+      ? "Pulang"
+      : "Selesai";
 
   return { checkIn, checkOut, nextAction };
 }
@@ -131,15 +111,10 @@ export async function appendAttendance(input: {
     })
     .returning({ id: schema.attendance.id });
 
-  // Re-fetch dengan join biar return shape konsisten dengan AttendanceRow
-  const [row] = await db
-    .select(baseSelect)
-    .from(schema.attendance)
-    .innerJoin(schema.profiles, eq(schema.attendance.userId, schema.profiles.id))
-    .leftJoin(schema.divisions, eq(schema.profiles.divisionId, schema.divisions.id))
+  const [row] = await selectAttendanceRows()
     .where(eq(schema.attendance.id, inserted.id))
     .limit(1);
-  return buildRow(row);
+  return row;
 }
 
 export async function getAllAttendance(options?: {
@@ -154,25 +129,17 @@ export async function getAllAttendance(options?: {
   if (options?.userId) conditions.push(eq(schema.attendance.userId, options.userId));
   if (options?.divisionId) conditions.push(eq(schema.profiles.divisionId, options.divisionId));
 
-  const rows = await db
-    .select(baseSelect)
-    .from(schema.attendance)
-    .innerJoin(schema.profiles, eq(schema.attendance.userId, schema.profiles.id))
-    .leftJoin(schema.divisions, eq(schema.profiles.divisionId, schema.divisions.id))
+  const rows = await selectAttendanceRows()
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(schema.attendance.tanggal), asc(schema.profiles.name), asc(schema.attendance.jam));
-  return rows.map(buildRow);
+  return rows;
 }
 
 export async function getAttendanceById(id: string): Promise<AttendanceRow | null> {
-  const [row] = await db
-    .select(baseSelect)
-    .from(schema.attendance)
-    .innerJoin(schema.profiles, eq(schema.attendance.userId, schema.profiles.id))
-    .leftJoin(schema.divisions, eq(schema.profiles.divisionId, schema.divisions.id))
+  const [row] = await selectAttendanceRows()
     .where(eq(schema.attendance.id, id))
     .limit(1);
-  return row ? buildRow(row) : null;
+  return row ?? null;
 }
 
 export async function updateAttendance(

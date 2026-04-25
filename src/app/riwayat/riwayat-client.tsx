@@ -11,19 +11,14 @@ import {
   AlertCircle,
   CheckCircle2,
   TrendingUp,
-  MapPin,
-  StickyNote,
   List,
   LayoutGrid,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
-import { PhotoLink } from "@/components/photo-thumbnail";
-import type { AttendanceRow } from "@/lib/attendance";
-
-export type RiwayatDay = {
-  tanggal: string;
-  checkIn: AttendanceRow | null;
-  checkOut: AttendanceRow | null;
-};
+import { AttendanceStatusBlock } from "@/components/attendance-status-block";
+import type { DaySummary } from "@/lib/attendance-helpers";
+import { buildMonthGrid, formatTanggalMediumId } from "@/lib/time";
 
 type Stats = {
   onTime: number;
@@ -32,43 +27,34 @@ type Stats = {
   totalCheckIn: number;
 };
 
-const HARI_PENDEK = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
-const BULAN = [
-  "Januari",
-  "Februari",
-  "Maret",
-  "April",
-  "Mei",
-  "Juni",
-  "Juli",
-  "Agustus",
-  "September",
-  "Oktober",
-  "November",
-  "Desember",
-];
-const BULAN_PENDEK = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-
-function formatTanggalID(iso: string): string {
-  const [y, m, d] = iso.split("-");
-  const hari = HARI_PENDEK[
-    new Date(`${iso}T00:00:00+07:00`).getUTCDay()
-  ];
-  return `${hari}, ${Number(d)} ${BULAN_PENDEK[Number(m) - 1]} ${y}`;
-}
-
 export function RiwayatClient({
   days,
   today,
   from,
   stats,
 }: {
-  days: RiwayatDay[];
+  days: DaySummary[];
   today: string;
   from: string;
   stats: Stats;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
+  const [calMonth, setCalMonth] = useState(today.slice(0, 7)); // "YYYY-MM"
+
+  const minMonth = from.slice(0, 7);
+  const maxMonth = today.slice(0, 7);
+
+  function prevMonth() {
+    const [y, m] = calMonth.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 2, 1));
+    setCalMonth(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+
+  function nextMonth() {
+    const [y, m] = calMonth.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m, 1));
+    setCalMonth(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
 
   return (
     <main className="relative min-h-dvh bg-background">
@@ -137,7 +123,16 @@ export function RiwayatClient({
           ) : view === "list" ? (
             <ListView days={days} />
           ) : (
-            <CalendarView days={days} today={today} from={from} />
+            <CalendarView
+              days={days}
+              today={today}
+              from={from}
+              calMonth={calMonth}
+              canPrev={calMonth > minMonth}
+              canNext={calMonth < maxMonth}
+              onPrev={prevMonth}
+              onNext={nextMonth}
+            />
           )}
         </section>
       </div>
@@ -172,7 +167,7 @@ function ViewToggle({
   );
 }
 
-function ListView({ days }: { days: RiwayatDay[] }) {
+function ListView({ days }: { days: DaySummary[] }) {
   return (
     <ol className="mt-4 space-y-3">
       {days.map((d) => (
@@ -184,7 +179,7 @@ function ListView({ days }: { days: RiwayatDay[] }) {
 
 type DayState = "complete" | "late" | "early" | "incomplete" | "absent" | "future" | "weekend";
 
-function classifyDay(day: RiwayatDay | null, isWeekend: boolean, isFuture: boolean): DayState {
+function classifyDay(day: DaySummary | null, isWeekend: boolean, isFuture: boolean): DayState {
   if (isFuture) return "future";
   if (!day) return isWeekend ? "weekend" : "absent";
   if (!day.checkIn) return isWeekend ? "weekend" : "absent";
@@ -218,43 +213,52 @@ function CalendarView({
   days,
   today,
   from,
+  calMonth,
+  canPrev,
+  canNext,
+  onPrev,
+  onNext,
 }: {
-  days: RiwayatDay[];
+  days: DaySummary[];
   today: string;
   from: string;
+  calMonth: string;
+  canPrev: boolean;
+  canNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
 }) {
   const dayMap = useMemo(() => {
-    const m = new Map<string, RiwayatDay>();
+    const m = new Map<string, DaySummary>();
     for (const d of days) m.set(d.tanggal, d);
     return m;
   }, [days]);
 
-  // Build calendar bulan ini (bulan dari hari ini)
-  const [yStr, mStr] = today.split("-");
-  const year = Number(yStr);
-  const month = Number(mStr); // 1-based
-  const firstDay = new Date(Date.UTC(year, month - 1, 1));
-  const lastDay = new Date(Date.UTC(year, month, 0));
-  const daysInMonth = lastDay.getUTCDate();
-  // ISO Monday-start: Sunday=0 -> 6, Monday=1 -> 0
-  const startWeekday = (firstDay.getUTCDay() + 6) % 7;
-
-  const cells: Array<{ iso: string | null; dayNum: number | null }> = [];
-  for (let i = 0; i < startWeekday; i++) cells.push({ iso: null, dayNum: null });
-  for (let d = 1; d <= daysInMonth; d++) {
-    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    cells.push({ iso, dayNum: d });
-  }
-  while (cells.length % 7 !== 0) cells.push({ iso: null, dayNum: null });
-
-  const todayIso = today;
-  const fromIso = from;
+  const { year, monthName, cells } = buildMonthGrid(calMonth);
 
   return (
     <div className="mt-4 rounded-2xl border bg-card p-4 shadow-sm">
-      <p className="text-center text-sm font-semibold">
-        {BULAN[month - 1]} {year}
-      </p>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onPrev}
+          disabled={!canPrev}
+          className="flex size-7 items-center justify-center rounded-full hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        <p className="text-sm font-semibold">
+          {monthName} {year}
+        </p>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={!canNext}
+          className="flex size-7 items-center justify-center rounded-full hover:bg-muted disabled:pointer-events-none disabled:opacity-30"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </div>
 
       <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((h) => (
@@ -267,16 +271,13 @@ function CalendarView({
       <div className="mt-1 grid grid-cols-7 gap-1">
         {cells.map((cell, idx) => {
           if (!cell.iso) return <div key={idx} />;
-          const date = new Date(`${cell.iso}T00:00:00Z`);
-          const weekday = date.getUTCDay();
+          const weekday = new Date(`${cell.iso}T00:00:00Z`).getUTCDay();
           const isWeekend = weekday === 0 || weekday === 6;
-          const isFuture = cell.iso > todayIso;
-          const isOutOfRange = cell.iso < fromIso;
+          const isFuture = cell.iso > today;
+          const isOutOfRange = cell.iso < from;
           const day = dayMap.get(cell.iso) ?? null;
-          const state = isOutOfRange
-            ? "future"
-            : classifyDay(day, isWeekend, isFuture);
-          const isToday = cell.iso === todayIso;
+          const state = isOutOfRange ? "future" : classifyDay(day, isWeekend, isFuture);
+          const isToday = cell.iso === today;
 
           return (
             <div
@@ -340,11 +341,11 @@ function StatCard({
   );
 }
 
-function DayCard({ day }: { day: RiwayatDay }) {
+function DayCard({ day }: { day: DaySummary }) {
   return (
     <li className="rounded-2xl border bg-card p-4 shadow-sm transition hover:shadow-md">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">{formatTanggalID(day.tanggal)}</p>
+        <p className="text-sm font-medium">{formatTanggalMediumId(day.tanggal)}</p>
         {!day.checkIn ? (
           <Badge variant="outline" className="h-5 text-[10px]">
             Tidak ada
@@ -357,57 +358,9 @@ function DayCard({ day }: { day: RiwayatDay }) {
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <StatusBlock label="Masuk" row={day.checkIn} />
-        <StatusBlock label="Pulang" row={day.checkOut} />
+        <AttendanceStatusBlock label="Masuk" row={day.checkIn} density="compact" />
+        <AttendanceStatusBlock label="Pulang" row={day.checkOut} density="compact" />
       </div>
     </li>
-  );
-}
-
-function StatusBlock({
-  label,
-  row,
-}: {
-  label: string;
-  row: AttendanceRow | null;
-}) {
-  if (!row) {
-    return (
-      <div className="rounded-xl border border-dashed p-3 text-muted-foreground">
-        <p className="text-[10px] font-medium uppercase tracking-wider">{label}</p>
-        <p className="mt-1 text-sm">—</p>
-      </div>
-    );
-  }
-  return (
-    <div className="rounded-xl border bg-muted/20 p-3">
-      <div className="flex items-center justify-between gap-1">
-        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          {label}
-        </p>
-        {row.flag ? (
-          <Badge variant="destructive" className="h-4 px-1.5 text-[9px]">
-            {row.flag}
-          </Badge>
-        ) : null}
-      </div>
-      <p className="mt-1 text-base font-semibold tabular-nums">{row.jam}</p>
-      <p
-        className="mt-1 flex items-start gap-1 text-[10px] text-muted-foreground"
-        title={row.alamat}
-      >
-        <MapPin className="mt-0.5 size-2.5 shrink-0" />
-        <span className="line-clamp-1">{row.alamat}</span>
-      </p>
-      {row.note ? (
-        <p className="mt-1 flex items-start gap-1 text-[10px]">
-          <StickyNote className="mt-0.5 size-2.5 shrink-0 text-primary" />
-          <span className="line-clamp-2">{row.note}</span>
-        </p>
-      ) : null}
-      <div className="mt-1.5">
-        <PhotoLink url={row.linkFoto} alt={`${label} ${row.jam}`} caption={row.alamat} />
-      </div>
-    </div>
   );
 }

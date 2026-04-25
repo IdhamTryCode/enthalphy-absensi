@@ -4,22 +4,24 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  MapPin,
   Users,
   ClipboardList,
   Inbox,
   Pencil,
-  StickyNote,
   Search,
   Download,
   CalendarDays,
 } from "lucide-react";
-import { PhotoThumbnail } from "@/components/photo-thumbnail";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { AttendanceRow } from "@/lib/attendance";
+import { AttendanceStatusBlock } from "@/components/attendance-status-block";
+import type { AttendanceRow } from "@/lib/attendance-types";
+import {
+  summarizeByUserAndDate,
+  type DailySummary,
+} from "@/lib/attendance-helpers";
+import { formatTanggalShortId, startOfMonth, startOfWeek } from "@/lib/time";
 import type { AppProfile } from "@/lib/users";
 import type { Division } from "@/lib/divisions";
 
@@ -30,58 +32,6 @@ type Filters = {
   divisionId: string;
   flag: string;
 };
-
-type DailySummary = {
-  userId: string;
-  email: string;
-  nama: string;
-  divisionName: string | null;
-  tanggal: string;
-  checkIn: AttendanceRow | null;
-  checkOut: AttendanceRow | null;
-};
-
-function summarize(rows: AttendanceRow[]): DailySummary[] {
-  const byKey = new Map<string, DailySummary>();
-  for (const r of rows) {
-    const key = `${r.userId}|${r.tanggal}`;
-    const existing = byKey.get(key) ?? {
-      userId: r.userId,
-      email: r.email,
-      nama: r.nama,
-      divisionName: r.divisionName,
-      tanggal: r.tanggal,
-      checkIn: null,
-      checkOut: null,
-    };
-    if (r.status === "Masuk" && !existing.checkIn) existing.checkIn = r;
-    else if (r.status === "Pulang" && !existing.checkOut) existing.checkOut = r;
-    byKey.set(key, existing);
-  }
-  return [...byKey.values()].sort((a, b) => {
-    if (a.tanggal !== b.tanggal) return b.tanggal.localeCompare(a.tanggal);
-    return a.nama.localeCompare(b.nama);
-  });
-}
-
-function formatTanggalShort(iso: string): string {
-  const [, m, d] = iso.split("-");
-  const bulan = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-  return `${Number(d)} ${bulan[Number(m) - 1]}`;
-}
-
-function startOfMonth(iso: string): string {
-  return iso.slice(0, 7) + "-01";
-}
-
-function startOfWeek(iso: string): string {
-  // ISO Monday-start
-  const d = new Date(`${iso}T00:00:00Z`);
-  const day = d.getUTCDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setUTCDate(d.getUTCDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
 
 const PAGE_SIZE = 50;
 
@@ -104,7 +54,10 @@ export function AdminClient({
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(PAGE_SIZE);
 
-  const summaries = useMemo(() => summarize(initialRows), [initialRows]);
+  const summaries = useMemo(
+    () => summarizeByUserAndDate(initialRows),
+    [initialRows],
+  );
 
   const filteredSummaries = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -425,78 +378,38 @@ function SummaryCard({ s }: { s: DailySummary }) {
               </p>
             </div>
             <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium tabular-nums">
-              {formatTanggalShort(s.tanggal)}
+              {formatTanggalShortId(s.tanggal)}
             </span>
           </div>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <StatusBlock label="Masuk" row={s.checkIn} />
-        <StatusBlock label="Pulang" row={s.checkOut} />
+        <AttendanceStatusBlock
+          label="Masuk"
+          row={s.checkIn}
+          photo="thumbnail"
+          footer={s.checkIn ? <KoreksiLink id={s.checkIn.id} /> : null}
+        />
+        <AttendanceStatusBlock
+          label="Pulang"
+          row={s.checkOut}
+          photo="thumbnail"
+          footer={s.checkOut ? <KoreksiLink id={s.checkOut.id} /> : null}
+        />
       </div>
     </li>
   );
 }
 
-function StatusBlock({
-  label,
-  row,
-}: {
-  label: string;
-  row: AttendanceRow | null;
-}) {
-  if (!row) {
-    return (
-      <div className="rounded-xl border border-dashed p-3 text-muted-foreground">
-        <p className="text-[11px] font-medium uppercase tracking-wider">{label}</p>
-        <p className="mt-1 text-sm">—</p>
-      </div>
-    );
-  }
+function KoreksiLink({ id }: { id: string }) {
   return (
-    <div className="rounded-xl border bg-muted/20 p-3">
-      <div className="flex items-center justify-between gap-1">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-        {row.flag ? (
-          <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">
-            {row.flag}
-          </Badge>
-        ) : null}
-      </div>
-      <div className="mt-1 flex items-start gap-2">
-        <PhotoThumbnail
-          url={row.linkFoto}
-          alt={`${label} ${row.jam}`}
-          caption={row.alamat}
-          size="sm"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="text-lg font-semibold tabular-nums leading-tight">
-            {row.jam}
-          </p>
-          <p
-            className="mt-0.5 flex items-start gap-1 text-[11px] text-muted-foreground"
-            title={row.alamat}
-          >
-            <MapPin className="mt-0.5 size-2.5 shrink-0" />
-            <span className="line-clamp-2">{row.alamat}</span>
-          </p>
-        </div>
-      </div>
-      {row.note ? (
-        <p className="mt-2 flex items-start gap-1 rounded-md bg-muted/50 px-2 py-1.5 text-[11px] text-foreground/80">
-          <StickyNote className="mt-0.5 size-2.5 shrink-0 text-primary" />
-          <span className="line-clamp-2">{row.note}</span>
-        </p>
-      ) : null}
-      <Link
-        href={`/admin/koreksi/${row.id}`}
-        className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-primary hover:underline"
-      >
-        <Pencil className="size-3" />
-        Koreksi
-      </Link>
-    </div>
+    <Link
+      href={`/admin/koreksi/${id}`}
+      className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-primary hover:underline"
+    >
+      <Pencil className="size-3" />
+      Koreksi
+    </Link>
   );
 }

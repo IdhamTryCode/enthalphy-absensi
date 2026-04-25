@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireAdmin } from "./current-user";
+import { requireAdmin, type CurrentUser } from "./current-user";
 import {
   updateProfile,
   type UserRole,
@@ -23,6 +23,18 @@ import { eq } from "drizzle-orm";
 export type ActionResult =
   | { ok: true; message?: string }
   | { ok: false; error: string };
+
+/** Return admin atau ActionResult error — caller cuma if-narrow sekali. */
+async function assertAdmin(): Promise<
+  { ok: true; admin: CurrentUser } | { ok: false; error: string }
+> {
+  try {
+    const admin = await requireAdmin();
+    return { ok: true, admin };
+  } catch {
+    return { ok: false, error: "Akses ditolak." };
+  }
+}
 
 // === Users (invite via Supabase Auth Admin API) ===
 
@@ -47,11 +59,8 @@ export async function actionInviteUser(input: {
   role: UserRole;
   divisionId: string | null;
 }): Promise<ActionResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
 
   const parsed = inviteSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Data tidak valid." };
@@ -125,20 +134,16 @@ export async function actionUpdateUser(input: {
   divisionId?: string | null;
   isActive?: boolean;
 }): Promise<ActionResult> {
-  let admin;
-  try {
-    admin = await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
 
   const parsed = updateUserSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Data tidak valid." };
 
-  if (parsed.data.id === admin.id && parsed.data.role === "user") {
+  if (parsed.data.id === auth.admin.id && parsed.data.role === "user") {
     return { ok: false, error: "Tidak bisa menurunkan role diri sendiri." };
   }
-  if (parsed.data.id === admin.id && parsed.data.isActive === false) {
+  if (parsed.data.id === auth.admin.id && parsed.data.isActive === false) {
     return { ok: false, error: "Tidak bisa menonaktifkan akun sendiri." };
   }
 
@@ -160,11 +165,8 @@ export async function actionResendInvite(input: {
   userId: string;
   email: string;
 }): Promise<ActionResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
 
   const supabase = createSupabaseAdminClient();
   const redirectTo =
@@ -188,13 +190,9 @@ export async function actionResendInvite(input: {
 }
 
 export async function actionDeleteUser(id: string): Promise<ActionResult> {
-  let admin;
-  try {
-    admin = await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
-  if (id === admin.id) {
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
+  if (id === auth.admin.id) {
     return { ok: false, error: "Tidak bisa menghapus akun sendiri." };
   }
   // Hapus dari auth.users → cascade ke profiles
@@ -213,11 +211,8 @@ export async function actionDeleteUser(id: string): Promise<ActionResult> {
 const divisionSchema = z.object({ name: z.string().min(1).max(80) });
 
 export async function actionCreateDivision(name: string): Promise<ActionResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
   const parsed = divisionSchema.safeParse({ name });
   if (!parsed.success) return { ok: false, error: "Nama divisi tidak valid." };
   try {
@@ -233,11 +228,8 @@ export async function actionCreateDivision(name: string): Promise<ActionResult> 
 }
 
 export async function actionRenameDivision(input: { id: string; name: string }): Promise<ActionResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
   const parsed = divisionSchema.safeParse({ name: input.name });
   if (!parsed.success) return { ok: false, error: "Nama divisi tidak valid." };
   try {
@@ -253,11 +245,8 @@ export async function actionRenameDivision(input: { id: string; name: string }):
 }
 
 export async function actionDeleteDivision(id: string): Promise<ActionResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
   try {
     await deleteDivision(id);
     revalidatePath("/admin/divisi");
@@ -288,12 +277,8 @@ export async function actionEditAttendance(input: {
   alamat?: string;
   reason: string;
 }): Promise<ActionResult> {
-  let admin;
-  try {
-    admin = await requireAdmin();
-  } catch {
-    return { ok: false, error: "Akses ditolak." };
-  }
+  const auth = await assertAdmin();
+  if (!auth.ok) return auth;
 
   const parsed = koreksiSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Data koreksi tidak valid." };
@@ -344,7 +329,7 @@ export async function actionEditAttendance(input: {
       await tx.insert(schema.attendanceEdits).values(
         edits.map((e) => ({
           attendanceId: parsed.data.attendanceId,
-          editedBy: admin.id,
+          editedBy: auth.admin.id,
           field: e.field,
           oldValue: e.oldValue,
           newValue: e.newValue,
@@ -359,12 +344,4 @@ export async function actionEditAttendance(input: {
     console.error(err);
     return { ok: false, error: "Gagal menyimpan koreksi." };
   }
-}
-
-// Helper utility export untuk profiles update (compatibility)
-export async function _internal_setDivision(profileId: string, divisionId: string | null) {
-  await db
-    .update(schema.profiles)
-    .set({ divisionId })
-    .where(eq(schema.profiles.id, profileId));
 }

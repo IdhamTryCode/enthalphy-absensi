@@ -19,40 +19,31 @@ export function SetPasswordForm({ mode }: { mode: Mode }) {
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
 
-  // Saat user klik link di email, Supabase set token di hash URL.
-  // detectSessionInUrl akan otomatis exchange token → session.
+  // Auth error dari URL — compute sekali saat mount, tidak butuh useEffect
+  const authError =
+    searchParams.get("error_description") ?? searchParams.get("error");
+
   useEffect(() => {
+    if (authError) return; // Skip subscribe kalau memang error
+
     const supabase = createSupabaseBrowserClient();
 
-    async function handleAuth() {
-      // Cek apakah ada error di URL (mis. token expired)
-      const errorCode = searchParams.get("error");
-      const errorDesc = searchParams.get("error_description");
-      if (errorCode) {
-        setAuthError(errorDesc ?? errorCode);
-        return;
-      }
-
-      // Listen ke onAuthStateChange — Supabase otomatis handle hash token saat page load
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
+    // Supabase auto-handle hash token saat page load (PKCE flow akan emit
+    // SIGNED_IN atau PASSWORD_RECOVERY).
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
         setAuthReady(true);
-        return;
       }
+    });
 
-      // Wait sebentar untuk Supabase auto-detect hash token (PKCE flow)
-      const subscription = supabase.auth.onAuthStateChange((event) => {
-        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-          setAuthReady(true);
-        }
-      });
+    // Sekaligus cek apakah session sudah ready (race-safe)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setAuthReady(true);
+    });
 
-      return () => subscription.data.subscription.unsubscribe();
-    }
-    handleAuth();
-  }, [searchParams]);
+    return () => data.subscription.unsubscribe();
+  }, [authError]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();

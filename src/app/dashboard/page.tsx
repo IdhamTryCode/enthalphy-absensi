@@ -3,7 +3,7 @@ import { getCurrentUser, signOut } from "@/lib/current-user";
 import Link from "next/link";
 import Image from "next/image";
 import { getTodayStateByUserId, type AttendanceRow } from "@/lib/attendance";
-import { todayWIB } from "@/lib/time";
+import { todayWIB, formatTanggalLongId } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,29 +19,6 @@ import {
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
-
-function formatTanggalID(iso: string): string {
-  const [y, m, d] = iso.split("-");
-  const hari = new Date(`${iso}T00:00:00+07:00`).toLocaleDateString("id-ID", {
-    weekday: "long",
-    timeZone: "Asia/Jakarta",
-  });
-  const bulan = [
-    "Januari",
-    "Februari",
-    "Maret",
-    "April",
-    "Mei",
-    "Juni",
-    "Juli",
-    "Agustus",
-    "September",
-    "Oktober",
-    "November",
-    "Desember",
-  ];
-  return `${hari}, ${Number(d)} ${bulan[Number(m) - 1]} ${y}`;
-}
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -113,7 +90,7 @@ export default async function DashboardPage() {
         {/* Greeting */}
         <section className="fade-in mt-8 lg:mt-14">
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            {formatTanggalID(today)}
+            {formatTanggalLongId(today)}
           </p>
           <h1 className="mt-1 text-balance text-3xl font-semibold tracking-tight lg:text-5xl">
             Halo, {firstName}
