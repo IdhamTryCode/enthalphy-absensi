@@ -159,8 +159,9 @@ export async function actionUpdateUser(input: {
 }
 
 /**
- * Resend invite email — generate link recovery (set password) baru
- * dan kirim ulang ke user.
+ * Resend invite email — kirim ulang email undangan dengan link baru.
+ * inviteUserByEmail otomatis kirim email (berbeda dengan generateLink yang hanya return link).
+ * Kalau user sudah ada di auth.users, Supabase tetap kirim email baru dengan token segar.
  */
 export async function actionResendInvite(input: {
   userId: string;
@@ -173,12 +174,8 @@ export async function actionResendInvite(input: {
   const redirectTo =
     env.NEXT_PUBLIC_SITE_URL ?? "https://enthalphy-absensi.vercel.app";
 
-  const { error } = await supabase.auth.admin.generateLink({
-    type: "invite",
-    email: input.email,
-    options: {
-      redirectTo: `${redirectTo}/auth/set-password`,
-    },
+  const { error } = await supabase.auth.admin.inviteUserByEmail(input.email, {
+    redirectTo: `${redirectTo}/auth/set-password`,
   });
 
   if (error) {
@@ -196,13 +193,22 @@ export async function actionDeleteUser(id: string): Promise<ActionResult> {
   if (id === auth.admin.id) {
     return { ok: false, error: "Tidak bisa menghapus akun sendiri." };
   }
-  // Hapus dari auth.users → cascade ke profiles
+
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase.auth.admin.deleteUser(id);
+
   if (error) {
-    console.error(error);
-    return { ok: false, error: "Gagal menghapus karyawan." };
+    // Kalau user tidak ada di auth.users (mis. profile orphan), hapus profile langsung.
+    if (error.message.toLowerCase().includes("not found") || error.status === 404) {
+      const { db, schema } = await import("@/db");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(schema.profiles).where(eq(schema.profiles.id, id));
+    } else {
+      console.error(error);
+      return { ok: false, error: "Gagal menghapus karyawan." };
+    }
   }
+
   revalidatePath("/admin/users");
   return { ok: true, message: "Karyawan dihapus." };
 }
