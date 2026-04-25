@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { env } from "./env";
 import { requireAdmin, type CurrentUser } from "./current-user";
 import {
   updateProfile,
@@ -67,7 +68,7 @@ export async function actionInviteUser(input: {
 
   const supabase = createSupabaseAdminClient();
   const redirectTo =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+    env.NEXT_PUBLIC_SITE_URL ?? "https://enthalphy-absensi.vercel.app";
 
   const { data, error } = await supabase.auth.admin.inviteUserByEmail(
     parsed.data.email,
@@ -170,7 +171,7 @@ export async function actionResendInvite(input: {
 
   const supabase = createSupabaseAdminClient();
   const redirectTo =
-    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+    env.NEXT_PUBLIC_SITE_URL ?? "https://enthalphy-absensi.vercel.app";
 
   const { error } = await supabase.auth.admin.generateLink({
     type: "invite",

@@ -11,6 +11,9 @@ const hhmm = z
 
 const schema = z
   .object({
+    // App URL (production: https://enthalphy-absensi.vercel.app, dev: http://localhost:3000)
+    NEXT_PUBLIC_SITE_URL: z.string().url().optional(),
+
     // Supabase
     NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
     NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
