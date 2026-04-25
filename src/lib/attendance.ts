@@ -1,7 +1,9 @@
 import "server-only";
 import { db, schema } from "@/db";
 import { and, eq, gte, lte, desc, asc, sql } from "drizzle-orm";
-import { todayWIB, formatTime, computeFlag } from "./time";
+import { formatInTimeZone } from "date-fns-tz";
+import { todayWIB, formatTime, TZ } from "./time";
+import { env } from "./env";
 import type {
   AttendanceFlag,
   AttendanceRow,
@@ -9,6 +11,17 @@ import type {
   NextAction,
   TodayState,
 } from "./attendance-types";
+
+function hhmmToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function computeFlag(status: "Masuk" | "Pulang", at: Date): AttendanceFlag {
+  const m = hhmmToMinutes(formatInTimeZone(at, TZ, "HH:mm"));
+  if (status === "Masuk") return m > hhmmToMinutes(env.WORK_START) ? "Telat" : null;
+  return m < hhmmToMinutes(env.WORK_END) ? "Pulang Cepat" : null;
+}
 
 // Re-export types & client-safe helpers — `import { ... } from "@/lib/attendance"`
 // tetap bekerja sama persis seperti sebelumnya.
@@ -106,7 +119,7 @@ export async function appendAttendance(input: {
       longitude: input.longitude,
       alamat: input.alamat,
       linkFoto: input.linkFoto,
-      flag: flag === "" ? null : flag,
+      flag: flag,
       note: input.note?.trim() || null,
     })
     .returning({ id: schema.attendance.id });

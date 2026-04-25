@@ -1,5 +1,4 @@
 import { formatInTimeZone, toZonedTime } from "date-fns-tz";
-import { env } from "./env";
 
 export const TZ = "Asia/Jakarta";
 
@@ -31,16 +30,6 @@ function hhmmToMinutes(hhmm: string): number {
 function dateToMinutesWIB(d: Date): number {
   const hhmm = formatInTimeZone(d, TZ, "HH:mm");
   return hhmmToMinutes(hhmm);
-}
-
-export type AttendanceFlag = "" | "Telat" | "Pulang Cepat";
-
-export function computeFlag(status: "Masuk" | "Pulang", at: Date): AttendanceFlag {
-  const m = dateToMinutesWIB(at);
-  if (status === "Masuk") {
-    return m > hhmmToMinutes(env.WORK_START) ? "Telat" : "";
-  }
-  return m < hhmmToMinutes(env.WORK_END) ? "Pulang Cepat" : "";
 }
 
 // === Display helpers (locale: Indonesia) ===
