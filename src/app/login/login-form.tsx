@@ -21,7 +21,7 @@ export function LoginForm() {
     e.preventDefault();
     startTransition(async () => {
       const supabase = createSupabaseBrowserClient();
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
@@ -36,6 +36,29 @@ export function LoginForm() {
         }
         return;
       }
+
+      // Cek apakah user ini punya profile (= sudah di-invite admin).
+      // Defense in depth — server side akan tolak juga via getCurrentUser.
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, is_active")
+          .eq("id", data.user.id)
+          .maybeSingle();
+        if (!profile) {
+          await supabase.auth.signOut();
+          toast.error(
+            "Akun ini belum terdaftar. Hubungi admin untuk minta diundang.",
+          );
+          return;
+        }
+        if (!profile.is_active) {
+          await supabase.auth.signOut();
+          toast.error("Akun nonaktif. Hubungi admin.");
+          return;
+        }
+      }
+
       router.push("/dashboard");
       router.refresh();
     });

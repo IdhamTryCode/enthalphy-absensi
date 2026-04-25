@@ -1,17 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getProfileById } from "@/lib/users";
 
-/**
- * OAuth callback handler.
- * Setelah user login Google via Supabase, mereka redirect ke sini dengan ?code=...
- * Kita exchange code → session, lalu redirect ke /dashboard atau ke `next` URL.
- */
+const NOT_INVITED_MSG =
+  "Akun ini belum terdaftar. Hubungi admin untuk minta diundang ke sistem absensi.";
+
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/dashboard";
 
-  // Error dari OAuth provider (mis. user denied consent, email tidak diizinkan, dll)
   const oauthError = searchParams.get("error");
   const oauthErrorDesc = searchParams.get("error_description");
   if (oauthError) {
@@ -27,13 +25,31 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
       console.error("exchangeCodeForSession error:", error);
       return NextResponse.redirect(
         `${origin}/login?error=${encodeURIComponent(error.message)}`,
       );
+    }
+
+    // Cek apakah user ini punya profile (= sudah di-invite admin).
+    // Kalau tidak, sign-out paksa biar session bersih.
+    if (data.user?.id) {
+      const profile = await getProfileById(data.user.id);
+      if (!profile) {
+        await supabase.auth.signOut();
+        return NextResponse.redirect(
+          `${origin}/login?error=${encodeURIComponent(NOT_INVITED_MSG)}`,
+        );
+      }
+      if (!profile.isActive) {
+        await supabase.auth.signOut();
+        return NextResponse.redirect(
+          `${origin}/login?error=${encodeURIComponent("Akun nonaktif. Hubungi admin.")}`,
+        );
+      }
     }
 
     return NextResponse.redirect(`${origin}${next}`);
