@@ -19,31 +19,45 @@ export function SetPasswordForm({ mode }: { mode: Mode }) {
   const [confirm, setConfirm] = useState("");
   const [show, setShow] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [hashError, setHashError] = useState<string | null>(null);
 
-  // Auth error dari URL — compute sekali saat mount, tidak butuh useEffect
+  // Error dari query params (redirect dari server)
   const authError =
-    searchParams.get("error_description") ?? searchParams.get("error");
+    hashError ??
+    searchParams.get("error_description") ??
+    searchParams.get("error");
 
   useEffect(() => {
-    if (authError) return; // Skip subscribe kalau memang error
+    // Cek error dari hash fragment (mis. #error=access_denied&error_description=...)
+    const hash = window.location.hash;
+    if (hash) {
+      const params = new URLSearchParams(hash.slice(1));
+      const errDesc = params.get("error_description") ?? params.get("error");
+      if (errDesc) {
+        setHashError(decodeURIComponent(errDesc));
+        return;
+      }
+    }
 
     const supabase = createSupabaseBrowserClient();
 
-    // Supabase auto-handle hash token saat page load (PKCE flow akan emit
-    // SIGNED_IN atau PASSWORD_RECOVERY).
     const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+      if (
+        event === "PASSWORD_RECOVERY" ||
+        event === "SIGNED_IN" ||
+        event === "USER_UPDATED"
+      ) {
         setAuthReady(true);
       }
     });
 
-    // Sekaligus cek apakah session sudah ready (race-safe)
+    // Race-safe: cek session yang mungkin sudah ada sebelum listener terpasang
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setAuthReady(true);
     });
 
     return () => data.subscription.unsubscribe();
-  }, [authError]);
+  }, []);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
