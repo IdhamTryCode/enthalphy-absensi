@@ -284,9 +284,8 @@ function CreateUserDialog({
         <DialogHeader>
           <DialogTitle>Undang Karyawan</DialogTitle>
           <DialogDescription>
-            Email berisi link &quot;set password&quot; akan dikirim. Karyawan
-            klik link → buat password → bisa login. Mereka juga bisa login
-            dengan Google kalau emailnya cocok.
+            Email berisi link aktivasi akan dikirim. Karyawan klik link → buat
+            password → bisa login.
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="space-y-4">
@@ -299,11 +298,12 @@ function CreateUserDialog({
               placeholder="nama@enthalphy.com"
               autoFocus
               required
+              className="mt-1"
             />
           </div>
           <div>
             <Label htmlFor="name">Nama Lengkap</Label>
-            <Input id="name" name="name" type="text" required />
+            <Input id="name" name="name" type="text" required className="mt-1" />
           </div>
           <div>
             <Label htmlFor="role">Peran</Label>
