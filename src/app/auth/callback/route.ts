@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getProfileById } from "@/lib/users";
 
 const NOT_INVITED_MSG =
@@ -35,11 +36,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Cek apakah user ini punya profile (= sudah di-invite admin).
-    // Kalau tidak, sign-out paksa biar session bersih.
+    // Kalau tidak, hapus dari auth.users via admin client (supaya email bisa
+    // di-invite ulang tanpa konflik), lalu sign-out dan redirect ke login.
     if (data.user?.id) {
       const profile = await getProfileById(data.user.id);
       if (!profile) {
-        await supabase.auth.signOut();
+        try {
+          const adminClient = createSupabaseAdminClient();
+          await adminClient.auth.admin.deleteUser(data.user.id);
+        } catch {
+          // best effort — kalau gagal, tetap sign-out
+          await supabase.auth.signOut();
+        }
         return NextResponse.redirect(
           `${origin}/login?error=${encodeURIComponent(NOT_INVITED_MSG)}`,
         );
