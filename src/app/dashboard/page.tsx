@@ -1,8 +1,8 @@
-import { auth, signOut } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { getCurrentUser, signOut } from "@/lib/current-user";
 import Link from "next/link";
 import Image from "next/image";
-import { getTodayState, type AttendanceRow } from "@/lib/attendance";
+import { getTodayStateByUserId, type AttendanceRow } from "@/lib/attendance";
 import { todayWIB } from "@/lib/time";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,7 @@ import {
   ArrowRight,
   ShieldCheck,
   Clock,
+  CalendarRange,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -43,13 +44,13 @@ function formatTanggalID(iso: string): string {
 }
 
 export default async function DashboardPage() {
-  const session = await auth();
-  if (!session?.user?.email) redirect("/login");
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
 
-  const state = await getTodayState(session.user.email);
+  const state = await getTodayStateByUserId(user.id);
   const today = todayWIB();
-  const firstName = (session.user.name ?? "").split(" ")[0] || "Kamu";
-  const initial = (session.user.name ?? session.user.email).slice(0, 2).toUpperCase();
+  const firstName = user.name.split(" ")[0] || "Kamu";
+  const initial = user.name.slice(0, 2).toUpperCase();
 
   return (
     <main className="relative min-h-dvh bg-background">
@@ -58,8 +59,24 @@ export default async function DashboardPage() {
       <div className="relative z-10 mx-auto w-full max-w-6xl px-5 pb-10 pt-6 lg:px-10">
         {/* Header — mobile simpel, desktop lebih kaya */}
         <header className="flex items-center justify-between">
-          <Image src="/logo.png" alt="Enthalphy" width={110} height={38} priority className="lg:hidden" />
-          <Image src="/logo.png" alt="Enthalphy" width={140} height={48} priority className="hidden lg:block" />
+          <Image
+            src="/logo.png"
+            alt="Enthalphy"
+            width={110}
+            height={38}
+            priority
+            style={{ width: "auto", height: "auto" }}
+            className="lg:hidden"
+          />
+          <Image
+            src="/logo.png"
+            alt="Enthalphy"
+            width={140}
+            height={48}
+            priority
+            style={{ width: "auto", height: "auto" }}
+            className="hidden lg:block"
+          />
 
           <div className="flex items-center gap-3">
             <div className="hidden items-center gap-3 rounded-full border bg-card/70 py-1 pl-1 pr-4 shadow-sm backdrop-blur-sm lg:flex">
@@ -67,16 +84,17 @@ export default async function DashboardPage() {
                 {initial}
               </span>
               <div className="leading-tight">
-                <p className="text-xs font-medium">{session.user.name}</p>
+                <p className="text-xs font-medium">{user.name}</p>
                 <p className="text-[10px] text-muted-foreground">
-                  {session.user.isAdmin ? "Admin" : "Karyawan"}
+                  {user.role === "admin" ? "Admin" : "Karyawan"}
                 </p>
               </div>
             </div>
             <form
               action={async () => {
                 "use server";
-                await signOut({ redirectTo: "/login" });
+                await signOut();
+                redirect("/login");
               }}
             >
               <Button
@@ -178,7 +196,22 @@ export default async function DashboardPage() {
               )}
             </section>
 
-            {session.user.isAdmin ? (
+            <Link href="/riwayat" className="block">
+              <div className="group flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm transition hover:border-primary/40 hover:shadow-md">
+                <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <CalendarRange className="size-5" />
+                </span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium">Riwayatku</p>
+                  <p className="text-xs text-muted-foreground">
+                    Lihat absensi 30 hari terakhir
+                  </p>
+                </div>
+                <ArrowRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </div>
+            </Link>
+
+            {user.role === "admin" ? (
               <Link href="/admin" className="block">
                 <div className="group flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm transition hover:border-primary/40 hover:shadow-md">
                   <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -251,6 +284,11 @@ function TimelineItem({
               <MapPin className="mt-0.5 size-3 shrink-0" />
               <span className="line-clamp-2">{row.alamat}</span>
             </div>
+            {row.note ? (
+              <p className="mt-2 rounded-md bg-muted/50 p-2 text-xs leading-relaxed text-foreground/80">
+                {row.note}
+              </p>
+            ) : null}
           </>
         ) : (
           <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">

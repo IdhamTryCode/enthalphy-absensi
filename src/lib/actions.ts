@@ -1,11 +1,11 @@
 "use server";
 
-import { put } from "@vercel/blob";
+import { put, del } from "@vercel/blob";
 import { z } from "zod";
-import { auth } from "./auth";
+import { requireUser } from "./current-user";
 import {
   appendAttendance,
-  getTodayState,
+  getTodayStateByUserId,
   type AttendanceStatus,
 } from "./attendance";
 import { reverseGeocode } from "./geocode";
@@ -15,6 +15,7 @@ const submitSchema = z.object({
   status: z.enum(["Masuk", "Pulang"]),
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
+  note: z.string().max(500).optional().default(""),
 });
 
 export type SubmitResult =
@@ -22,8 +23,10 @@ export type SubmitResult =
   | { ok: false; error: string };
 
 export async function submitAttendance(formData: FormData): Promise<SubmitResult> {
-  const session = await auth();
-  if (!session?.user?.email) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
     return { ok: false, error: "Sesi tidak valid. Silakan login ulang." };
   }
 
@@ -31,6 +34,7 @@ export async function submitAttendance(formData: FormData): Promise<SubmitResult
     status: formData.get("status"),
     latitude: formData.get("latitude"),
     longitude: formData.get("longitude"),
+    note: formData.get("note") ?? "",
   });
   if (!parsed.success) {
     return { ok: false, error: "Data tidak lengkap atau tidak valid." };
@@ -47,12 +51,9 @@ export async function submitAttendance(formData: FormData): Promise<SubmitResult
     return { ok: false, error: "File yang diunggah bukan gambar." };
   }
 
-  const { status, latitude, longitude } = parsed.data;
-  const email = session.user.email;
-  const nama = session.user.name ?? email;
+  const { status, latitude, longitude, note } = parsed.data;
 
-  // Lock: 1× check-in + 1× check-out per tanggal, check-out harus setelah check-in
-  const state = await getTodayState(email);
+  const state = await getTodayStateByUserId(user.id);
   if (status === "Masuk" && state.checkIn) {
     return {
       ok: false,
@@ -71,9 +72,8 @@ export async function submitAttendance(formData: FormData): Promise<SubmitResult
     }
   }
 
-  // Upload foto
   const ext = photo.type === "image/png" ? "png" : "jpg";
-  const safeEmail = email.replace(/[^a-z0-9]/gi, "_");
+  const safeEmail = user.email.replace(/[^a-z0-9]/gi, "_");
   const key = `absensi/${todayWIB()}/${safeEmail}-${status}-${Date.now()}.${ext}`;
   let linkFoto: string;
   try {
@@ -87,23 +87,37 @@ export async function submitAttendance(formData: FormData): Promise<SubmitResult
     return { ok: false, error: "Gagal upload foto. Coba lagi." };
   }
 
-  // Reverse geocode (best-effort)
   const alamat = await reverseGeocode(latitude, longitude);
 
-  // Append ke Sheet
   try {
     await appendAttendance({
-      nama,
-      email,
+      userId: user.id,
       status: status as AttendanceStatus,
       latitude,
       longitude,
       alamat,
       linkFoto,
+      note: note || null,
     });
   } catch (err) {
-    console.error("Sheet append failed:", err);
-    return { ok: false, error: "Foto tersimpan, tapi gagal menulis ke sheet. Hubungi admin." };
+    console.error("DB insert failed:", err);
+    // Cleanup foto orphan supaya storage tidak terbuang
+    try {
+      await del(linkFoto);
+    } catch (delErr) {
+      console.error("Failed to cleanup orphan blob:", delErr);
+    }
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("attendance_user_tanggal_status_uniq")) {
+      return {
+        ok: false,
+        error: "Absensi sudah tercatat di waktu yang sama. Refresh dashboard.",
+      };
+    }
+    return {
+      ok: false,
+      error: "Gagal menyimpan absensi. Coba lagi atau hubungi admin.",
+    };
   }
 
   return {

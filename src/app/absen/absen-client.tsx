@@ -47,6 +47,7 @@ export function AbsenClient({ status }: { status: Status }) {
   const [geoLoading, setGeoLoading] = useState(false);
 
   const [pending, setPending] = useState(false);
+  const [note, setNote] = useState("");
 
   const startCamera = useCallback(async () => {
     // Kalau sudah ada stream aktif, jangan start ulang (Strict Mode double-invoke guard).
@@ -172,6 +173,7 @@ export function AbsenClient({ status }: { status: Status }) {
     fd.set("latitude", String(coords.lat));
     fd.set("longitude", String(coords.lng));
     fd.set("photo", photoBlob, `absen-${Date.now()}.jpg`);
+    fd.set("note", note.trim());
     try {
       const result = await submitAttendance(fd);
       if (result.ok) {
@@ -187,7 +189,9 @@ export function AbsenClient({ status }: { status: Status }) {
       toast.error(msg);
       setPending(false);
     }
-  }, [photoBlob, coords, status, pending]);
+    },
+    [photoBlob, coords, status, pending, note],
+  );
 
   const hasPhoto = !!photoUrl;
 
@@ -285,6 +289,13 @@ export function AbsenClient({ status }: { status: Status }) {
             onRetry={requestLocation}
           />
 
+          <NoteCard
+            status={status}
+            value={note}
+            onChange={setNote}
+            disabled={pending}
+          />
+
           <div className="hidden rounded-2xl border bg-card p-4 text-xs text-muted-foreground shadow-sm lg:block">
             <p className="font-medium text-foreground">Tips</p>
             <ul className="mt-2 space-y-1.5 leading-relaxed">
@@ -341,6 +352,50 @@ export function AbsenClient({ status }: { status: Status }) {
         </div>
       </div>
     </main>
+  );
+}
+
+const NOTE_LIMIT = 500;
+
+function NoteCard({
+  status,
+  value,
+  onChange,
+  disabled,
+}: {
+  status: Status;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const placeholder =
+    status === "Masuk"
+      ? "Apa rencana kerjamu hari ini?"
+      : "Apa saja yang sudah kamu kerjakan hari ini?";
+  const label = status === "Masuk" ? "Rencana Hari Ini" : "Laporan Hari Ini";
+
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {label}
+          <span className="ml-1 text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">
+            (opsional)
+          </span>
+        </p>
+        <span className="text-[10px] tabular-nums text-muted-foreground">
+          {value.length}/{NOTE_LIMIT}
+        </span>
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value.slice(0, NOTE_LIMIT))}
+        disabled={disabled}
+        placeholder={placeholder}
+        rows={3}
+        className="mt-2 w-full resize-none rounded-md border bg-background px-3 py-2 text-sm leading-relaxed outline-none transition placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+      />
+    </div>
   );
 }
 
@@ -410,10 +465,14 @@ function LocationCard({
           ) : error ? (
             <>
               <p className="mt-1 text-sm font-medium text-destructive">{error}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                Klik ikon gembok di address bar browser → izinkan akses Lokasi →
+                reload halaman ini.
+              </p>
               <button
                 onClick={onRetry}
                 type="button"
-                className="mt-1 text-xs font-medium text-primary hover:underline"
+                className="mt-2 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10"
               >
                 Coba lagi
               </button>

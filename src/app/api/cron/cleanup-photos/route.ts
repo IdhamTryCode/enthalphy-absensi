@@ -9,11 +9,20 @@ const RETENTION_DAYS = 30;
 const PREFIX = "absensi/";
 
 export async function GET(req: Request) {
+  // Wajib: CRON_SECRET harus di-set di env, tidak boleh kosong.
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 16) {
+    console.error(
+      "[cron] CRON_SECRET is missing or too short — endpoint disabled",
+    );
+    return NextResponse.json(
+      { error: "Server misconfigured" },
+      { status: 500 },
+    );
+  }
   // Proteksi: Vercel Cron otomatis kirim header Authorization dengan CRON_SECRET.
-  // Request manual tanpa secret akan ditolak.
   const authHeader = req.headers.get("authorization");
-  const expected = `Bearer ${process.env.CRON_SECRET ?? ""}`;
-  if (!process.env.CRON_SECRET || authHeader !== expected) {
+  if (authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
