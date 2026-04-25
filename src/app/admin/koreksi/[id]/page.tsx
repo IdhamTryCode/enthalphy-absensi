@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   getAttendanceById,
   getAttendanceEditHistory,
@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, History, MapPin, StickyNote } from "lucide-react";
 import { PhotoThumbnail } from "@/components/photo-thumbnail";
+import { requireAdmin } from "@/lib/current-user";
 import { KoreksiForm } from "./koreksi-form";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,11 @@ export default async function KoreksiPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  try {
+    await requireAdmin();
+  } catch {
+    redirect("/login");
+  }
   const { id } = await params;
   const attendance = await getAttendanceById(id);
   if (!attendance) notFound();

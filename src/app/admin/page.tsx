@@ -1,7 +1,9 @@
+import { redirect } from "next/navigation";
 import { getAllAttendance } from "@/lib/attendance";
 import { listProfiles } from "@/lib/users";
 import { listDivisions } from "@/lib/divisions";
 import { todayWIB } from "@/lib/time";
+import { requireAdmin } from "@/lib/current-user";
 import { AdminClient } from "./admin-client";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +19,12 @@ export default async function AdminPage({
     flag?: string;
   }>;
 }) {
+  try {
+    await requireAdmin();
+  } catch {
+    redirect("/login");
+  }
+
   const params = await searchParams;
   const today = todayWIB();
   const from = params.from || today;
@@ -31,15 +39,13 @@ export default async function AdminPage({
       toDate: to,
       userId: filterUserId || undefined,
       divisionId: filterDivisionId || undefined,
+      flag: (filterFlag === "Telat" || filterFlag === "Pulang Cepat") ? filterFlag : undefined,
     }),
     listProfiles(),
     listDivisions(),
   ]);
 
-  const filteredRows =
-    filterFlag === "Telat" || filterFlag === "Pulang Cepat"
-      ? rows.filter((r) => r.flag === filterFlag)
-      : rows;
+  const filteredRows = rows;
 
   return (
     <AdminClient

@@ -122,12 +122,16 @@ export async function getAllAttendance(options?: {
   toDate?: string;
   userId?: string;
   divisionId?: string;
+  flag?: string;
 }): Promise<AttendanceRow[]> {
   const conditions = [];
   if (options?.fromDate) conditions.push(gte(schema.attendance.tanggal, options.fromDate));
   if (options?.toDate) conditions.push(lte(schema.attendance.tanggal, options.toDate));
   if (options?.userId) conditions.push(eq(schema.attendance.userId, options.userId));
   if (options?.divisionId) conditions.push(eq(schema.profiles.divisionId, options.divisionId));
+  if (options?.flag === "Telat" || options?.flag === "Pulang Cepat") {
+    conditions.push(eq(schema.attendance.flag, options.flag));
+  }
 
   const rows = await selectAttendanceRows()
     .where(conditions.length > 0 ? and(...conditions) : undefined)
