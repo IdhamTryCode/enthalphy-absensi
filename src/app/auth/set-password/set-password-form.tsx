@@ -28,8 +28,9 @@ export function SetPasswordForm({ mode }: { mode: Mode }) {
     searchParams.get("error");
 
   useEffect(() => {
-    // Cek error dari hash fragment (mis. #error=access_denied&error_description=...)
     const hash = window.location.hash;
+
+    // Cek error dari hash fragment
     if (hash) {
       const params = new URLSearchParams(hash.slice(1));
       const errDesc = params.get("error_description") ?? params.get("error");
@@ -51,10 +52,25 @@ export function SetPasswordForm({ mode }: { mode: Mode }) {
       }
     });
 
-    // Race-safe: cek session yang mungkin sudah ada sebelum listener terpasang
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setAuthReady(true);
-    });
+    // @supabase/ssr tidak otomatis proses hash token — harus exchange manual.
+    if (hash) {
+      const params = new URLSearchParams(hash.slice(1));
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+      if (accessToken && refreshToken) {
+        supabase.auth
+          .setSession({ access_token: accessToken, refresh_token: refreshToken })
+          .then(({ error }) => {
+            if (error) setHashError(error.message);
+            else setAuthReady(true);
+          });
+      }
+    } else {
+      // Tidak ada hash — cek session yang sudah ada (mis. password reset via PKCE)
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) setAuthReady(true);
+      });
+    }
 
     return () => data.subscription.unsubscribe();
   }, []);
