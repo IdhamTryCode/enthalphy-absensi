@@ -45,29 +45,30 @@ function PhotoModal({
         <DialogDescription className="sr-only">
           {caption ?? alt}
         </DialogDescription>
-        <div className="relative aspect-square w-full overflow-hidden bg-muted sm:rounded-t-2xl">
+        <div className="relative w-full overflow-hidden bg-black sm:rounded-t-2xl" style={{ maxHeight: "70svh" }}>
           <Image
             src={url}
             alt={alt}
-            fill
+            width={800}
+            height={1000}
             sizes="(min-width: 640px) 640px, 100vw"
-            className="object-contain"
+            className="mx-auto block max-h-[70svh] w-auto object-contain"
             priority
           />
           <button
             type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Tutup"
-            className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-background/80 text-foreground backdrop-blur-sm transition hover:bg-background"
+            className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-sm transition hover:bg-black/70"
           >
             <X className="size-4" />
           </button>
         </div>
-        <div className="flex items-start justify-between gap-3 px-5 pb-5">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{alt}</p>
             {caption ? (
-              <p className="truncate text-xs text-muted-foreground">{caption}</p>
+              <p className="line-clamp-2 text-xs text-muted-foreground">{caption}</p>
             ) : null}
           </div>
           <a
